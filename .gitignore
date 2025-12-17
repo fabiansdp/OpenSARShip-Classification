@@ -1,0 +1,13 @@
+__pycache__
+augment/
+dataset/
+env/
+experiments/
+final/
+new/
+old/
+resized/
+resized_new/
+*.txt
+*.npz
+*.save
