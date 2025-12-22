@@ -1,18 +1,17 @@
 
 # Configuration
 import random
-import shutil
 import pandas as pd
 import numpy as np
-import torch
-import os
 import tifffile as tiff
 import joblib
+import os
 from augment import AugmentedDataset, ShipAugmentation
 from dataload import OpenSARShipDataset
 from split import stratified_train_val_split
 from pathlib import Path
 from sklearn.preprocessing import MinMaxScaler
+from skimage.transform import resize
 
 random.seed(42)
 
@@ -120,7 +119,20 @@ def calculate_global_stats(dataset):
     return global_mean, global_std
 
 
-# 1. Create datasets
+# Preprocess dataset
+os.makedirs("resized_new", exist_ok=True)
+os.makedirs("final/train", exist_ok=True)
+os.makedirs("final/val", exist_ok=True)
+os.makedirs("final/test", exist_ok=True)
+for file_path in Path("new/PATCH_CAL").iterdir():
+    img = tiff.imread(file_path).astype(np.float32)
+    img_resized = resize(img, (64, 64), order=3, mode='reflect', preserve_range=True)
+    if (img_resized.shape != (64, 64, 2)):
+        print(img.shape)
+        print(f"Error resizing {file_path.name}: got shape {img_resized.shape}")
+    tiff.imwrite("resized_new/" + file_path.name, img_resized.astype(np.float32))
+
+
 print("\nLoading datasets...")
 dataset = OpenSARShipDataset(
     root_dir="new",
