@@ -1,7 +1,164 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import resnet50, ResNet50_Weights
+from torchvision.models import resnet50, ResNet50_Weights, AlexNet, AlexNet_Weights, vgg19, VGG19_Weights
+
+class VGG19WithFeatures(nn.Module):
+    """
+    VGG19 with scale-variant features
+    Architecture similar to ResNet50WithFeatures but using VGG19 backbone
+    """
+    def __init__(self, num_features=14, num_classes=4, pretrained=True):
+        super(VGG19WithFeatures, self).__init__()
+        
+        # 1x1 Conv to transform 2 channels (VV, VH) to 3 channels (RGB)
+        self.channel_adapter = nn.Conv2d(2, 3, kernel_size=1, stride=1, padding=0)
+        
+        # Load pretrained VGG19
+        if pretrained:
+            weights = VGG19_Weights.IMAGENET1K_V1
+            self.vgg19 = vgg19(weights=weights)
+        else:
+            self.vgg19 = vgg19(weights=None)
+        
+        # Remove final classification layer
+        self.vgg19 = nn.Sequential(*list(self.vgg19.children())[:-1])
+        
+        # Image feature dimension from VGG19
+        vgg_out_features = 512 * 7 * 7  # After flattening
+        
+        # 3-layer dense network for scale-variant features
+        self.feature_net = nn.Sequential(
+            nn.Linear(num_features, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 16),
+            nn.ReLU()
+        )
+        
+        # Combined feature dimension
+        combined_features = vgg_out_features + 16
+        
+        # Final classification layers with L1 regularization
+        self.classifier = nn.Sequential(
+            nn.Linear(combined_features, 128),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(64, num_classes)
+        )
+
+    def forward(self, image, features):
+        """
+        Forward pass
+        
+        Args:
+            image: (B, 2, 64, 64) - VV and VH stacked
+            features: (B, 14) - scale-variant features
+        
+        Returns:
+            logits: (B, num_classes)
+        """
+        # Convert 2 channels to 3 channels
+        x = self.channel_adapter(image)
+        
+        # Extract image features with VGG19
+        x = self.vgg19(x)
+        x = torch.flatten(x, 1)  # (B, 512*7*7)
+        
+        # Process scale-variant features
+        f = self.feature_net(features)  # (B, 16)
+        
+        # Concatenate features
+        combined = torch.cat([x, f], dim=1)  # (B, 512*7*7 + 16)
+        
+        # Classification
+        logits = self.classifier(combined)
+        
+        return logits
+class AlexNetWithFeatures(nn.Module):
+    """
+    AlexNet with scale-variant features
+    Architecture similar to ResNet50WithFeatures but using AlexNet backbone
+    """
+    def __init__(self, num_features=14, num_classes=4, pretrained=True):
+        super(AlexNetWithFeatures, self).__init__()
+        
+        # 1x1 Conv to transform 2 channels (VV, VH) to 3 channels (RGB)
+        self.channel_adapter = nn.Conv2d(2, 3, kernel_size=1, stride=1, padding=0)
+        
+        # Load pretrained AlexNet
+        alexnet = AlexNet(num_classes=num_classes)
+        
+        # Extract only the feature extraction part (convolutional layers)
+        self.features = alexnet.features
+        
+        # Extract the avgpool
+        self.avgpool = alexnet.avgpool
+        
+        # Extract classifier layers except the last one
+        self.alexnet_classifier = nn.Sequential(*list(alexnet.classifier.children())[:-1])
+        
+        # Image feature dimension from AlexNet (after the second-to-last FC layer)
+        alexnet_out_features = 4096 
+        
+        # 3-layer dense network for scale-variant features
+        self.feature_net = nn.Sequential(
+            nn.Linear(num_features, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 16),
+            nn.ReLU()
+        )
+        
+        # Combined feature dimension
+        combined_features = alexnet_out_features + 16
+        
+        # Final classification layers
+        self.classifier = nn.Sequential(
+            nn.Linear(combined_features, 128),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(64, num_classes)
+        )
+
+    def forward(self, image, features):
+        """
+        Forward pass
+        
+        Args:
+            image: (B, 2, 64, 64) - VV and VH stacked
+            features: (B, 14) - scale-variant features
+        
+        Returns:
+            logits: (B, num_classes)
+        """
+        # Convert 2 channels to 3 channels
+        x = self.channel_adapter(image)
+        
+        # Extract image features with AlexNet
+        x = self.features(x)  # Convolutional features
+        x = self.avgpool(x)   # Adaptive average pooling
+        x = torch.flatten(x, 1)  # Flatten
+        x = self.alexnet_classifier(x)  # Through FC layers (except last)
+        
+        # Process scale-variant features
+        f = self.feature_net(features)  # (B, 16)
+        
+        # Concatenate features
+        combined = torch.cat([x, f], dim=1)  # (B, 4096 + 16)
+        
+        # Classification
+        logits = self.classifier(combined)
+        
+        return logits
 
 class ResNet50WithFeatures(nn.Module):
     """
@@ -26,9 +183,9 @@ class ResNet50WithFeatures(nn.Module):
         self.resnet = nn.Sequential(*list(self.resnet.children())[:-1])
         
         # Freeze early layers (fine-tune last 20 layers only)
-        for i, param in enumerate(self.resnet.parameters()):
-            if i < len(list(self.resnet.parameters())) - 20:
-                param.requires_grad = False
+        # for i, param in enumerate(self.resnet.parameters()):
+        #     if i < len(list(self.resnet.parameters())) - 20:
+        #         param.requires_grad = False
         
         # Image feature dimension from ResNet50
         resnet_out_features = 2048

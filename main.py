@@ -1,6 +1,6 @@
 import torch
 import os
-from model import ResNet50WithFeatures, BaselineModel
+from model import ResNet50WithFeatures, BaselineModel, AlexNetWithFeatures, VGG19WithFeatures
 from dataload import FinalDataset
 from torch.utils.data import DataLoader
 from train import train_model
@@ -17,8 +17,8 @@ def main():
         'device': 'cuda' if torch.cuda.is_available() else 'cpu'
     }
 
-    model_type = 'resnet50'  # Options: 'baseline', 'resnet50'
-    output_dir = f"experiments/{model_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    model_type = 'resnet50'  # Options: 'baseline', 'resnet50', 'alexnet', 'vgg19'
+    output_dir = f"experiments/{model_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_lr{config['learning_rate']}"
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"Using device: {config['device']}")
@@ -49,6 +49,8 @@ def main():
     print("\nTraining baseline model...")
     # model = BaselineModel(num_classes=4, num_features=14)
     model = ResNet50WithFeatures(num_features=14, num_classes=4, pretrained=True)
+    # model = VGG19WithFeatures(num_features=14, num_classes=4, pretrained=True)
+    # model = AlexNetWithFeatures(num_features=14, num_classes=4, pretrained=True)
     model = model.to(config['device'])
 
     # Print model summary
@@ -82,9 +84,11 @@ def main():
     plot_confusion_matrix(results['confusion_matrix'], output_dir=output_dir)
     
     print("Training complete!")
-    print(f"Best validation accuracy: {max(history['val_acc']):.2f}%")
+    print(f'Best validation F1-score: {max(history["val_f1"]):.2f}%')
 
     return model, history, results
 
 if __name__ == '__main__':
     model, history, results = main()
+
+    print(history)
