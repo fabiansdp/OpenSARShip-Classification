@@ -80,15 +80,19 @@ def main():
     print("\n6. Final evaluation...")
     results = evaluate_model(model, val_loader, config['device'])
 
+
     print_results(results)
     plot_confusion_matrix(results['confusion_matrix'], output_dir=output_dir)
     
+    
     print("Training complete!")
     print(f'Best validation F1-score: {max(history["val_f1"]):.2f}%')
+    
+    with open(f'{output_dir}/results.txt', 'w') as f:
+        print(results, file=f)
+        print(history, file=f)
 
     return model, history, results
 
 if __name__ == '__main__':
     model, history, results = main()
-
-    print(history)
